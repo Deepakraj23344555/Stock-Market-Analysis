@@ -1,6 +1,2 @@
-streamlit
-yfinance
-pandas
-matplotlib
-seaborn
-ta
+pip install streamlit yfinance ta scikit-learn matplotlib
+streamlit run reliance_app.py
