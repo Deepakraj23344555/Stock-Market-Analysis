@@ -1,144 +1,100 @@
-import streamlit as st
+# 📦 Import libraries
 import yfinance as yf
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
 import ta
 
-# Page config
-st.set_page_config(page_title="Reliance Stock Analysis", layout="wide")
+# 📊 Set seaborn style
+sns.set(style="darkgrid")
 
-# Title
-st.title("📊 Reliance Industries Stock Analysis App")
-st.markdown("Analyze historical performance, technical indicators, and investment signals for **RELIANCE.NS** using Python and Streamlit.")
+# 📥 Download stock data
+ticker = 'RELIANCE.NS'  # Use '500325.BO' for BSE
+data = yf.download(ticker, start='2020-01-01', end='2025-01-01', interval='1d')
 
-# Load data function
-@st.cache_data
-def load_data():
-    df = yf.download('RELIANCE.NS', start='2010-01-01', end='2025-01-01')
-    df.dropna(inplace=True)
+# 🧮 Technical indicators
+data['SMA_20'] = data['Close'].rolling(window=20).mean()
+data['SMA_50'] = data['Close'].rolling(window=50).mean()
 
-    if df.empty or 'Close' not in df.columns:
-        return pd.DataFrame()
+rsi = ta.momentum.RSIIndicator(close=data['Close'], window=14)
+data['RSI'] = rsi.rsi()
 
-    # Technical Indicators
-    df['SMA_20'] = df['Close'].rolling(window=20).mean()
-    df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
+macd = ta.trend.MACD(close=data['Close'])
+data['MACD'] = macd.macd()
+data['Signal'] = macd.macd_signal()
 
-    try:
-        df['RSI'] = ta.momentum.RSIIndicator(close=df['Close']).rsi()
-    except Exception as e:
-        st.warning(f"⚠️ RSI calculation failed: {e}")
-        df['RSI'] = None
+# 🖼️ Plot closing price + SMAs
+plt.figure(figsize=(14, 6))
+plt.plot(data['Close'], label='Close Price', color='blue')
+plt.plot(data['SMA_20'], label='20-Day SMA', color='red')
+plt.plot(data['SMA_50'], label='50-Day SMA', color='green')
+plt.title('Reliance Daily Close Price with SMAs')
+plt.xlabel('Date')
+plt.ylabel('Price (INR)')
+plt.legend()
+plt.tight_layout()
+plt.show()
 
-    try:
-        macd = ta.trend.MACD(close=df['Close'])
-        df['MACD'] = macd.macd()
-        df['MACD_Signal'] = macd.macd_signal()
-    except:
-        df['MACD'] = df['MACD_Signal'] = None
+# 🖼️ Plot RSI
+plt.figure(figsize=(14, 4))
+plt.plot(data['RSI'], label='RSI', color='purple')
+plt.axhline(70, color='red', linestyle='--')
+plt.axhline(30, color='green', linestyle='--')
+plt.title('RSI (14-day)')
+plt.xlabel('Date')
+plt.ylabel('RSI')
+plt.legend()
+plt.tight_layout()
+plt.show()
 
-    try:
-        bb = ta.volatility.BollingerBands(close=df['Close'])
-        df['BB_High'] = bb.bollinger_hband()
-        df['BB_Low'] = bb.bollinger_lband()
-    except:
-        df['BB_High'] = df['BB_Low'] = None
+# 🖼️ Plot MACD
+plt.figure(figsize=(14, 4))
+plt.plot(data['MACD'], label='MACD', color='blue')
+plt.plot(data['Signal'], label='Signal Line', color='orange')
+plt.title('MACD')
+plt.xlabel('Date')
+plt.ylabel('MACD Value')
+plt.legend()
+plt.tight_layout()
+plt.show()
 
-    df['Daily_Return'] = df['Close'].pct_change()
+# 💾 Drop missing values for model training
+data = data.dropna()
 
-    return df
+# 🎯 ML: Prepare data
+features = ['Open', 'High', 'Low', 'Volume', 'SMA_20', 'SMA_50', 'RSI', 'MACD', 'Signal']
+X = data[features]
+y = data['Close']
 
-# Load the data
-df = load_data()
+# 🧪 Train-test split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
 
-if df.empty:
-    st.error("❌ Failed to fetch valid data for RELIANCE.NS. Please check internet or data source.")
-    st.stop()
+# 🤖 Train Linear Regression model
+model = LinearRegression()
+model.fit(X_train, y_train)
 
-# --- Section: Latest Data Table ---
-st.subheader("📅 Latest Data Snapshot")
-st.dataframe(df.tail(10))
+# 📈 Predict
+y_pred = model.predict(X_test)
 
-# --- Section: Close Price with SMA/EMA ---
-st.subheader("📈 Close Price with SMA & EMA")
-fig1, ax1 = plt.subplots(figsize=(12, 5))
-ax1.plot(df['Close'], label='Close Price')
-ax1.plot(df['SMA_20'], label='SMA 20')
-ax1.plot(df['EMA_20'], label='EMA 20')
-ax1.set_title("RELIANCE.NS - Close Price with SMA & EMA")
-ax1.legend()
-ax1.grid()
-st.pyplot(fig1)
+# 📉 Evaluate
+mse = mean_squared_error(y_test, y_pred)
+print(f'\n📊 Mean Squared Error: {mse:.2f}\n')
 
-# --- Section: RSI Chart ---
-if df['RSI'].notnull().any():
-    st.subheader("📊 RSI (Relative Strength Index)")
-    fig2, ax2 = plt.subplots(figsize=(12, 3))
-    ax2.plot(df['RSI'], color='orange')
-    ax2.axhline(70, linestyle='--', color='red', label='Overbought')
-    ax2.axhline(30, linestyle='--', color='green', label='Oversold')
-    ax2.set_title("RSI Indicator")
-    ax2.legend()
-    ax2.grid()
-    st.pyplot(fig2)
+# 🖼️ Plot actual vs predicted prices
+plt.figure(figsize=(14, 6))
+plt.plot(y_test.index, y_test, label='Actual', color='black')
+plt.plot(y_test.index, y_pred, label='Predicted', color='orange', linestyle='--')
+plt.title('Actual vs Predicted Closing Prices')
+plt.xlabel('Date')
+plt.ylabel('Price (INR)')
+plt.legend()
+plt.tight_layout()
+plt.show()
 
-# --- Section: MACD Chart ---
-if df['MACD'].notnull().any():
-    st.subheader("📉 MACD (Moving Average Convergence Divergence)")
-    fig3, ax3 = plt.subplots(figsize=(12, 3))
-    ax3.plot(df['MACD'], label='MACD', color='blue')
-    ax3.plot(df['MACD_Signal'], label='Signal', color='red')
-    ax3.set_title("MACD and Signal Line")
-    ax3.legend()
-    ax3.grid()
-    st.pyplot(fig3)
-
-# --- Section: Bollinger Bands ---
-if df['BB_High'].notnull().any():
-    st.subheader("📊 Bollinger Bands")
-    fig4, ax4 = plt.subplots(figsize=(12, 5))
-    ax4.plot(df['Close'], label='Close Price', color='blue')
-    ax4.plot(df['BB_High'], label='Upper Band', linestyle='--', color='green')
-    ax4.plot(df['BB_Low'], label='Lower Band', linestyle='--', color='red')
-    ax4.fill_between(df.index, df['BB_High'], df['BB_Low'], alpha=0.1)
-    ax4.set_title("Bollinger Bands")
-    ax4.legend()
-    ax4.grid()
-    st.pyplot(fig4)
-
-# --- Section: Return Distribution ---
-st.subheader("📈 Daily Return Distribution")
-fig5, ax5 = plt.subplots(figsize=(10, 4))
-sns.histplot(df['Daily_Return'].dropna(), bins=50, kde=True, ax=ax5)
-ax5.set_title("Distribution of Daily Returns")
-st.pyplot(fig5)
-
-# --- Section: Investment Summary ---
-st.subheader("💡 Investment Summary")
-
-rsi_value = df['RSI'].iloc[-1] if df['RSI'].notnull().any() else None
-rsi_signal = (
-    "📈 Overbought" if rsi_value and rsi_value > 70 else
-    "📉 Oversold" if rsi_value and rsi_value < 30 else
-    "🟡 Neutral" if rsi_value else "N/A"
-)
-
-try:
-    close_price = df['Close'].iloc[-1]
-    sma_20 = df['SMA_20'].iloc[-1]
-    if pd.notna(close_price) and pd.notna(sma_20):
-        trend = "🟢 Bullish" if close_price > sma_20 else "🔴 Bearish"
-    else:
-        trend = "⚠️ Trend Not Available"
-except:
-    trend = "⚠️ Trend Error"
-
-summary = f"""
-- **Latest Close Price**: ₹{close_price:.2f}  
-- **Average Daily Return**: {df['Daily_Return'].mean():.4f}  
-- **Volatility (Std Dev)**: {df['Daily_Return'].std():.4f}  
-- **RSI Value**: {rsi_value:.2f if rsi_value else 'N/A'} → {rsi_signal}  
-- **Trend Signal**: {trend}
-"""
-st.markdown(summary)
+# 💾 Export to CSV
+data.to_csv('reliance_stock_analysis.csv')
+print("✅ Data exported to 'reliance_stock_analysis.csv'")
