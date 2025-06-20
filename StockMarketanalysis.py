@@ -5,20 +5,19 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import ta
 
-# Page setup
+# Page config
 st.set_page_config(page_title="Reliance Stock Analysis", layout="wide")
 
 # Title
 st.title("📊 Reliance Industries Stock Analysis App")
-st.markdown("Analyze historical performance, technical indicators, and investment signals for **RELIANCE.NS**.")
+st.markdown("Analyze historical performance, technical indicators, and investment signals for **RELIANCE.NS** using Python and Streamlit.")
 
-# Function to load and process data
+# Load data function
 @st.cache_data
 def load_data():
     df = yf.download('RELIANCE.NS', start='2010-01-01', end='2025-01-01')
     df.dropna(inplace=True)
 
-    # Safety checks
     if df.empty or 'Close' not in df.columns:
         return pd.DataFrame()
 
@@ -26,14 +25,12 @@ def load_data():
     df['SMA_20'] = df['Close'].rolling(window=20).mean()
     df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
 
-    # RSI
     try:
         df['RSI'] = ta.momentum.RSIIndicator(close=df['Close']).rsi()
     except Exception as e:
         st.warning(f"⚠️ RSI calculation failed: {e}")
         df['RSI'] = None
 
-    # MACD
     try:
         macd = ta.trend.MACD(close=df['Close'])
         df['MACD'] = macd.macd()
@@ -41,7 +38,6 @@ def load_data():
     except:
         df['MACD'] = df['MACD_Signal'] = None
 
-    # Bollinger Bands
     try:
         bb = ta.volatility.BollingerBands(close=df['Close'])
         df['BB_High'] = bb.bollinger_hband()
@@ -56,22 +52,21 @@ def load_data():
 # Load the data
 df = load_data()
 
-# Stop if data failed to load
 if df.empty:
-    st.error("❌ Failed to fetch valid data for RELIANCE.NS. Please check your internet or try again later.")
+    st.error("❌ Failed to fetch valid data for RELIANCE.NS. Please check internet or data source.")
     st.stop()
 
 # --- Section: Latest Data Table ---
 st.subheader("📅 Latest Data Snapshot")
 st.dataframe(df.tail(10))
 
-# --- Section: Price with SMA/EMA ---
+# --- Section: Close Price with SMA/EMA ---
 st.subheader("📈 Close Price with SMA & EMA")
 fig1, ax1 = plt.subplots(figsize=(12, 5))
 ax1.plot(df['Close'], label='Close Price')
 ax1.plot(df['SMA_20'], label='SMA 20')
 ax1.plot(df['EMA_20'], label='EMA 20')
-ax1.set_title("RELIANCE.NS Price with SMA & EMA")
+ax1.set_title("RELIANCE.NS - Close Price with SMA & EMA")
 ax1.legend()
 ax1.grid()
 st.pyplot(fig1)
@@ -112,7 +107,7 @@ if df['BB_High'].notnull().any():
     ax4.grid()
     st.pyplot(fig4)
 
-# --- Section: Return Analysis ---
+# --- Section: Return Distribution ---
 st.subheader("📈 Daily Return Distribution")
 fig5, ax5 = plt.subplots(figsize=(10, 4))
 sns.histplot(df['Daily_Return'].dropna(), bins=50, kde=True, ax=ax5)
@@ -121,16 +116,26 @@ st.pyplot(fig5)
 
 # --- Section: Investment Summary ---
 st.subheader("💡 Investment Summary")
+
 rsi_value = df['RSI'].iloc[-1] if df['RSI'].notnull().any() else None
 rsi_signal = (
     "📈 Overbought" if rsi_value and rsi_value > 70 else
     "📉 Oversold" if rsi_value and rsi_value < 30 else
     "🟡 Neutral" if rsi_value else "N/A"
 )
-trend = "🟢 Bullish" if df['Close'].iloc[-1] > df['SMA_20'].iloc[-1] else "🔴 Bearish"
+
+try:
+    close_price = df['Close'].iloc[-1]
+    sma_20 = df['SMA_20'].iloc[-1]
+    if pd.notna(close_price) and pd.notna(sma_20):
+        trend = "🟢 Bullish" if close_price > sma_20 else "🔴 Bearish"
+    else:
+        trend = "⚠️ Trend Not Available"
+except:
+    trend = "⚠️ Trend Error"
 
 summary = f"""
-- **Latest Close Price**: ₹{df['Close'].iloc[-1]:.2f}  
+- **Latest Close Price**: ₹{close_price:.2f}  
 - **Average Daily Return**: {df['Daily_Return'].mean():.4f}  
 - **Volatility (Std Dev)**: {df['Daily_Return'].std():.4f}  
 - **RSI Value**: {rsi_value:.2f if rsi_value else 'N/A'} → {rsi_signal}  
